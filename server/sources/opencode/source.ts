@@ -474,6 +474,10 @@ export class OpenCodeSource implements AgentSource {
 
   private enter(t: Track, owner: string | undefined): boolean {
     const office = this.opts.office;
+    // Registro de outro tipo com este id (ex.: subagente já entregue, ainda na graça do dono) não vira principal, nem o
+    // contrário: o addMain sobre um registro existente só tira o removeAt e deixa o subagente órfão. A varredura seguinte tenta de novo.
+    const ex = office.get(t.key);
+    if (ex && ex.kind !== (owner === undefined ? 'main' : 'sub')) return false;
     if (owner === undefined) {
       if (!t.directory) return false;
       office.addMain({

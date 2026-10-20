@@ -41,10 +41,13 @@ function harness(opts: { password?: string; configPassword?: string; timing?: Pa
   cleanups.push(() => rmSync(home, { recursive: true, force: true }));
   const late: { office?: Office } = {};
   const accounts = new AccountsService({ dirs: [], home, env: {}, onChange: () => late.office?.markDirty() });
+  // Relógio do escritório: o teste avança `clock.offset` para passar as graças (o tempo real continua correndo).
+  const clock = { offset: 0 };
   const office = new Office({
     names: new NameStore(null),
     version: 'teste',
     startedAt: Date.now(),
+    now: () => Date.now() + clock.offset,
     accounts: (s) => accounts.list(s),
     sources: () => [],
     accountName: (id) => accounts.find(id)?.detected.name,
@@ -64,6 +67,7 @@ function harness(opts: { password?: string; configPassword?: string; timing?: Pa
   return {
     fake,
     office,
+    clock,
     notices,
     agents,
     agent: (id: string) => agents().find((a) => a.id === id),
@@ -211,6 +215,40 @@ describe('ao vivo (SSE)', () => {
     h.fake.emit('session.execution.succeeded', { sessionID: 'ses_vinculada' });
     await until(() => h.agent('opencode:ses_vinculada')?.status === 'done', 'subagente vinculado entregou');
     expect(h.notices.some((n) => n.text.includes('📦') && n.agentId === 'opencode:ses_vinculada')).toBe(true);
+    expect(h.fake.nonGetRequests()).toEqual([]);
+  });
+
+  it('dono sai na graça de entrega do subagente: a sessão não vira principal por cima do registro dele, e volta como principal depois', async () => {
+    const h = harness();
+    await h.start();
+    await until(() => h.source.sources()[0]?.ok === true, 'conexão');
+    h.office.addMain({
+      id: 'claude-principal-2',
+      account: 'conta-claude',
+      sessionId: 'claude-thread-dono',
+      cwd: '/projetos/gama',
+      role: 'Agente principal',
+      startedAt: Date.now(),
+      status: 'working',
+    });
+    h.fake.emit('session.created', { sessionID: 'ses_trabalho', title: 'Trabalho', metadata: { ocgo: { thread: 'claude-thread-dono' } } }, { directory: '/projetos/gama' });
+    h.fake.emit('session.execution.started', { sessionID: 'ses_trabalho' });
+    await until(() => h.agent('opencode:ses_trabalho')?.status === 'working', 'subagente entrou sob o dono');
+    h.fake.emit('session.execution.succeeded', { sessionID: 'ses_trabalho' });
+    await until(() => h.agent('opencode:ses_trabalho')?.status === 'done', 'subagente entregou');
+
+    // O dono sai dentro da graça de entrega. A sessão segue recente, então a varredura tenta entrar como principal.
+    h.office.closeMain('claude-principal-2');
+    h.fake.emit('session.text.ended', { sessionID: 'ses_trabalho' });
+    await sleep(60);
+    // Passam as duas graças: o registro do subagente tem de sair (sem a correção, o addMain tiraria o removeAt e ele ficava).
+    h.clock.offset += 30_000;
+    h.office.tick();
+    expect(h.agent('opencode:ses_trabalho')).toBeUndefined();
+
+    h.fake.emit('session.text.ended', { sessionID: 'ses_trabalho' });
+    await until(() => h.agent('opencode:ses_trabalho')?.kind === 'main', 'sessão voltou como principal');
+    expect(h.agent('opencode:ses_trabalho')).toMatchObject({ kind: 'main', provider: 'opencode', roomId: '/projetos/gama' });
     expect(h.fake.nonGetRequests()).toEqual([]);
   });
 });
