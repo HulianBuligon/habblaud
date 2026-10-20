@@ -119,6 +119,8 @@ export interface SubInput {
   startedAt: number;
   /** Ferramenta do subagente quando não é a do pai (ex.: OpenCode sob um agente do Claude Code); ausente = a do pai. */
   provider?: Provider;
+  /** Conta do subagente quando não é a do pai (OpenCode sob um agente do Claude Code: os tokens vão para a conta dele); ausente = a do pai. */
+  account?: string;
 }
 
 interface AgentRecord {
@@ -601,7 +603,7 @@ export class Office {
       look: person.look,
       role: p.role,
       sessionId: p.sessionId,
-      account: parent.info.account,
+      account: p.account ?? parent.info.account,
       status: 'working',
       recent: [],
       tasks: [],

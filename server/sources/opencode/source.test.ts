@@ -251,6 +251,29 @@ describe('ao vivo (SSE)', () => {
     expect(h.agent('opencode:ses_trabalho')).toMatchObject({ kind: 'main', provider: 'opencode', roomId: '/projetos/gama' });
     expect(h.fake.nonGetRequests()).toEqual([]);
   });
+
+  it('subagente da sessão do Claude Code fica na conta do OpenCode: os tokens não caem na conta do Claude', async () => {
+    const h = harness();
+    await h.start();
+    await until(() => h.source.sources()[0]?.ok === true, 'conexão');
+    h.office.addMain({
+      id: 'claude-principal-3',
+      account: 'conta-claude',
+      sessionId: 'claude-thread-conta',
+      cwd: '/projetos/gama',
+      role: 'Agente principal',
+      startedAt: Date.now(),
+      status: 'working',
+    });
+    h.fake.emit('session.created', { sessionID: 'ses_conta', title: 'Conta', metadata: { ocgo: { thread: 'claude-thread-conta' } } }, { directory: '/projetos/gama' });
+    h.fake.emit('session.execution.started', { sessionID: 'ses_conta' });
+    await until(() => h.agent('opencode:ses_conta')?.status === 'working', 'subagente entrou sob o dono');
+    const contaOpenCode = h.source.sources()[0]?.label;
+    expect(contaOpenCode).toBeTruthy();
+    expect(h.agent('opencode:ses_conta')).toMatchObject({ kind: 'sub', parentId: 'claude-principal-3' });
+    expect(h.agent('opencode:ses_conta')?.account).toBe(contaOpenCode);
+    expect(h.agent('opencode:ses_conta')?.account).not.toBe('conta-claude');
+  });
 });
 
 describe('conexão', () => {

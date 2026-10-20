@@ -500,6 +500,7 @@ export class OpenCodeSource implements AgentSource {
         background: false,
         startedAt: t.createdAt,
         provider: 'opencode',
+        account: this.accountId,
       });
       if (!added) return false;
     }
